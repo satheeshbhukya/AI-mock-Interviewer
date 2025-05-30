@@ -4,8 +4,6 @@
 
 Let's be honest: preparing for tech interviews can be tough. You grind LeetCode, watch mock interviews on YouTube, but something's often missing. If you're like me, maybe you don't have tech buddies available 24/7 for practice, or you worry if the feedback you *do* get is actually helpful. Solving problems on your own is one thing, but explaining your thought process under pressure? That's a whole different skill.
 
-This exact feeling sparked an idea for my Google GenAI Capstone project: **What if AI could be that reliable, on-demand practice partner?** An AI that doesn't just throw questions at you, but actually interviews you, guides you when you're stuck, and gives detailed feedback?
-
 So, I built one! It's an **AI Mock Technical Interviewer**, created using Google's powerful Gemini AI model and a cool framework called LangGraph.
 
 ![AI Mock Interviewer App UI](https://raw.githubusercontent.com/satheeshbhukya/AI-mock-Interviewer/main/static/firstpage.png)
