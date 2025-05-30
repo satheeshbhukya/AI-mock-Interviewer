@@ -206,7 +206,7 @@ I'm really proud of how this project turned out. It started as a personal need â
 
 You can find the complete project in my Kaggle Notebook:
 
-[**>>> Notebook <<<**](https://www.kaggle.com/code/maxymrim/mock-technical-interviewer-with-gemini-langgraph)
+[**>>> Notebook <<<**](https://www.kaggle.com/code/satheeshbhukya1/ai-mock-technical-interviewer#Mock-Technical-Interviewer-with-Gemini-and-LangGraph)
 
 
 Give it a try! I'd be thrilled to hear your feedback, suggestions, or ideas in the comments on Kaggle or below! What features would *you* find most helpful?
