@@ -1,3 +1,9 @@
+"""
+AI Mock Interviewer — FastAPI Backend
+Powered by Google Gemini + LangGraph
+Deploy on HuggingFace Spaces (port 7860)
+"""
+
 import base64
 import json
 import os
@@ -26,13 +32,11 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
-
 load_dotenv()
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 if not GOOGLE_API_KEY:
     print("WARNING: GOOGLE_API_KEY is not set. Set it in HuggingFace Space secrets.")
 os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-
 
 app = FastAPI(
     title="AI Mock Interviewer API",
@@ -42,7 +46,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],        
+    allow_origins=["*"],        # Restrict to your Vercel domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,7 +61,6 @@ try:
 except Exception as e:
     print(f"ERROR loading data.json: {e}")
     df = pd.DataFrame()
-
 
 client = genai.Client(api_key=GOOGLE_API_KEY)
 
@@ -142,15 +145,10 @@ Guidelines:
 - Base evaluation strictly on the transcript. Be objective. Cite specific examples.
 - Avoid vague evidence like "nums[i]" — use meaningful excerpts.
 
-# Inputs:
-
-## Interview Question
 {question}
 
-## Interview Transcript
 {transcript}
 
-## Candidate Code Solution
 {code}
 """
 
@@ -176,30 +174,22 @@ Given the transcript of a technical interview, analyze the provided whiteboard i
 Describe its content and relevance to the ongoing discussion or code.
 Be concise — only provide what's necessary.
 
-## Transcript:
 {transcript}
 """
 
 REPORT_TEMPLATE = """
-# Candidate Interview Evaluation Report
 
 ---
-
-## Overall Summary
 
 {{ evaluation.overall_summary }}
 
 ---
-
-## Final Recommendation
 
 **Recommendation:** {{ evaluation.final_recommendation.recommendation }}
 
 **Justification:** {{ evaluation.final_recommendation.justification }}
 
 ---
-
-## Strengths Observed
 
 {% if evaluation.strengths %}
 {% for s in evaluation.strengths %}
@@ -212,8 +202,6 @@ REPORT_TEMPLATE = """
 
 ---
 
-## Areas for Development
-
 {% if evaluation.areas_for_development %}
 {% for a in evaluation.areas_for_development %}
 * **{{ a.point }}**
@@ -225,20 +213,13 @@ REPORT_TEMPLATE = """
 
 ---
 
-## Detailed Analysis
-
-### Technical Competence
 {{ evaluation.detailed_analysis.technical_competence }}
 
-### Problem Solving & Critical Thinking
 {{ evaluation.detailed_analysis.problem_solving_critical_thinking }}
 
-### Communication & Collaboration
 {{ evaluation.detailed_analysis.communication_collaboration }}
 
 ---
-
-## Suggested Learning Resources
 
 {{ recommendations | default("No specific learning recommendations were generated.") }}
 
@@ -342,14 +323,23 @@ def end_interview() -> bool:
     Use this ONLY when the candidate confirms they want to end the interview.
     """
 
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=GOOGLE_API_KEY)
+_llm = None
+_llm_with_tools = None
+
+def get_llm():
+    global _llm, _llm_with_tools
+    if _llm is None:
+        api_key = os.environ.get("GOOGLE_API_KEY", "")
+        if not api_key:
+            raise ValueError("GOOGLE_API_KEY is not set. Add it in HuggingFace Space secrets.")
+        _llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key)
+        _llm_with_tools = _llm.bind_tools(auto_tools + interview_tools)
+    return _llm, _llm_with_tools
 
 auto_tools: List[BaseTool] = [get_difficulty_levels, get_topic_categories, get_random_problem, list_questions]
 tool_node = ToolNode(auto_tools)
 
 interview_tools: List[BaseTool] = [select_question, end_interview]
-llm_with_tools: Runnable = llm.bind_tools(auto_tools + interview_tools)
-
 
 def get_interview_transcript(messages: List[BaseMessage]) -> str:
     """Converts message history to a readable transcript string.
@@ -368,7 +358,7 @@ def get_interview_transcript(messages: List[BaseMessage]) -> str:
                 if image_data := part.get("image_url"):
                     try:
                         response = client.models.generate_content(
-                            model="gemini-2.5-flash",
+                            model="gemini-2.0-flash",
                             contents=[DESCRIBE_IMAGE_PROMPT.format(transcript=transcript), image_data.get("url")],
                         )
                         text += f"[Whiteboard description: {response.text}]\n"
@@ -376,7 +366,6 @@ def get_interview_transcript(messages: List[BaseMessage]) -> str:
                         text += f"[Whiteboard image could not be described: {e}]\n"
             transcript += f"Candidate: {text}\n\n"
     return transcript
-
 
 def get_data_for_search(evaluation_response) -> Tuple[str, str]:
     """Extracts analytics text and topics list from evaluation for the learning plan."""
@@ -390,7 +379,6 @@ def get_data_for_search(evaluation_response) -> Tuple[str, str]:
 
     return analytics, topics
 
-
 def get_learning_resources(question: str, analytics: str, topics: str, language: str = "Python") -> str:
     """Uses Gemini with Google Search grounding to generate a personalized learning plan."""
     config = types.GenerateContentConfig(
@@ -400,7 +388,7 @@ def get_learning_resources(question: str, analytics: str, topics: str, language:
     for attempt in range(5):
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-2.0-flash",
                 contents=RESOURCES_SEARCH_PROMPT.format(
                     question=question, analytics=analytics, topics=topics, language=language
                 ),
@@ -421,7 +409,6 @@ def get_learning_resources(question: str, analytics: str, topics: str, language:
         fallback_text = "\n".join(p.text for p in rc.content.parts) if rc else ""
         return f"*Could not retrieve grounded recommendations.*\n\n{fallback_text}"
 
-    # Build cited markdown response
     parts = []
     generated_text = "\n".join(p.text for p in rc.content.parts)
     last_idx = 0
@@ -450,10 +437,10 @@ def chatbot_with_tools(state: InterviewState) -> InterviewState:
     if not messages:
         ai_message = AIMessage(content=WELCOME_MSG)
     else:
+        _, llm_with_tools = get_llm()
         ai_message = llm_with_tools.invoke(system_and_messages)
 
     return state | {"messages": [ai_message]}
-
 
 def question_selection_node(state: InterviewState) -> InterviewState:
     """Handles the select_question tool call — loads question content into state."""
@@ -483,7 +470,6 @@ def question_selection_node(state: InterviewState) -> InterviewState:
 
     return state | {"messages": outbound_msgs, "question": question_content, "code": question_code}
 
-
 def finish_interview_node(state: InterviewState) -> InterviewState:
     """Handles the end_interview tool call — sets finished flag."""
     tool_msg: AIMessage = state["messages"][-1]
@@ -503,7 +489,6 @@ def finish_interview_node(state: InterviewState) -> InterviewState:
 
     return state | {"messages": outbound_msgs, "finished": True}
 
-
 def create_report_node(state: InterviewState) -> InterviewState:
     """Generates the full evaluation report using structured output + grounding."""
     question = state.get("question", "")
@@ -514,10 +499,9 @@ def create_report_node(state: InterviewState) -> InterviewState:
     transcript = get_interview_transcript(messages)
     code = state.get("code", "")
 
-    # Generate structured evaluation
     try:
         eval_response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             contents=CANDIDATE_EVALUATION_PROMPT.format(
                 question=question, transcript=transcript, code=code
             ),
@@ -531,18 +515,15 @@ def create_report_node(state: InterviewState) -> InterviewState:
         print(f"Evaluation generation error: {e}")
         return state | {"report": f"Error generating evaluation: {e}"}
 
-    # Generate grounded learning resources
     analytics, topics = get_data_for_search(eval_response)
     recommendations = get_learning_resources(question, analytics, topics, "Python")
 
-    # Render report using Jinja2 template
     report_md = Template(REPORT_TEMPLATE).render(
         evaluation=evaluation,
         recommendations=recommendations,
     )
 
     return state | {"report": report_md}
-
 
 def maybe_route_to_tools(
     state: InterviewState,
@@ -584,7 +565,6 @@ graph_builder.add_edge("create report", "__end__")
 interviewer_graph = graph_builder.compile()
 print("LangGraph compiled successfully.")
 
-
 sessions: Dict[str, Dict[str, Any]] = {}
 
 class StartSessionResponse(BaseModel):
@@ -611,7 +591,6 @@ class SessionInfoResponse(BaseModel):
     code: str
     finished: bool
 
-
 @app.get("/", tags=["Health"])
 def root():
     """Health check endpoint."""
@@ -621,7 +600,6 @@ def root():
         "version": "1.0.0",
         "questions_loaded": len(df),
     }
-
 
 @app.post("/api/session/start", response_model=StartSessionResponse, tags=["Session"])
 def start_session():
@@ -643,7 +621,6 @@ def start_session():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to initialize graph: {e}")
 
-    # Extract welcome message
     welcome = WELCOME_MSG
     for msg in reversed(new_state.get("messages", [])):
         if isinstance(msg, AIMessage):
@@ -652,7 +629,6 @@ def start_session():
 
     sessions[session_id] = new_state
     return StartSessionResponse(session_id=session_id, message=welcome)
-
 
 @app.post("/api/chat", response_model=SendMessageResponse, tags=["Interview"])
 def chat(req: SendMessageRequest):
@@ -665,7 +641,6 @@ def chat(req: SendMessageRequest):
 
     state = sessions[req.session_id]
 
-    # If interview is already finished, return cached state
     if state.get("finished"):
         return SendMessageResponse(
             message="The interview has ended. Your report is ready below.",
@@ -675,7 +650,6 @@ def chat(req: SendMessageRequest):
             report=state.get("report", ""),
         )
 
-    # Build message content
     content: List[Dict[str, Any]] = []
 
     if req.message:
@@ -699,7 +673,6 @@ def chat(req: SendMessageRequest):
             finished=False,
         )
 
-    # Append human message to history
     current_messages = list(state.get("messages", []))
     current_messages.append(HumanMessage(content=content))
 
@@ -711,7 +684,6 @@ def chat(req: SendMessageRequest):
         "finished": False,
     }
 
-    # Invoke LangGraph
     try:
         new_state = interviewer_graph.invoke(graph_input)
     except Exception as e:
@@ -719,7 +691,6 @@ def chat(req: SendMessageRequest):
 
     sessions[req.session_id] = new_state
 
-    # Extract AI response
     ai_response = "Processing..."
     for msg in reversed(new_state.get("messages", [])):
         if isinstance(msg, AIMessage):
@@ -741,7 +712,6 @@ def chat(req: SendMessageRequest):
         report=new_state.get("report") if finished else None,
     )
 
-
 @app.get("/api/session/{session_id}", response_model=SessionInfoResponse, tags=["Session"])
 def get_session(session_id: str):
     """Get current session state (problem, code, finished status)."""
@@ -755,25 +725,21 @@ def get_session(session_id: str):
         finished=state.get("finished", False),
     )
 
-
 @app.delete("/api/session/{session_id}", tags=["Session"])
 def delete_session(session_id: str):
     """Delete a session and free memory."""
     sessions.pop(session_id, None)
     return {"status": "deleted", "session_id": session_id}
 
-
 @app.get("/api/questions/topics", tags=["Questions"])
 def get_topics():
     """List all available question topics."""
     return {"topics": df.topic.unique().tolist()}
 
-
 @app.get("/api/questions/difficulties", tags=["Questions"])
 def get_difficulties():
     """List all available difficulty levels."""
     return {"difficulties": df.difficulty.unique().tolist()}
-
 
 @app.get("/api/questions", tags=["Questions"])
 def list_all_questions(topic: Optional[str] = None, difficulty: Optional[str] = None):
