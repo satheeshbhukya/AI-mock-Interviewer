@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+python-multipart
+google-genai
+google-api-core
+langchain-google-genai
+langgraph
+langgraph-prebuilt
+langchain-core
+pandas
+jinja2
+pydantic
+pillow
+python-dotenv

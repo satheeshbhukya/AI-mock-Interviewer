@@ -1,222 +1,267 @@
+---
+title: Mock Technical Interviewer
+emoji: 🐠
+colorFrom: blue
+colorTo: blue
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 # AI Mock Interviewer
 
-## Building an AI-Powered Interview Coach with Google Gemini and LangGraph
+An AI-powered mock technical interview platform. You talk to an AI interviewer, solve coding problems, draw on a whiteboard, and at the end receive a detailed evaluation report with personalized learning recommendations.
 
-Let's face it: preparing for technical interviews is challenging. You might solve countless LeetCode problems, watch mock interviews, and rehearse answers, but something often feels missing. If you're like many aspiring developers, you might lack a reliable practice partner who can simulate real interview pressure, provide insightful feedback, and adapt to your learning pace.
+Built with Google Gemini, LangGraph, FastAPI, and React.
 
-That's exactly why I built an **AI Mock Technical Interviewer**—a smart, interactive coach powered by Google's Gemini AI and LangGraph.
+---
 
-![AI Mock Interviewer App UI](https://raw.githubusercontent.com/satheeshbhukya/AI-mock-Interviewer/main/static/firstpage.png)
+## What Is This Project
 
-## The Problem: Why Self-Prep Falls Short
+Most people prepare for technical interviews by solving problems alone. But real interviews are conversations — you need to think out loud, explain your approach, handle hints, and write code under pressure. This project simulates exactly that.
 
-Preparing for technical interviews isn't just about solving problems—it's about **thinking aloud, handling pressure, and communicating clearly**. Common struggles include:
+The AI acts as a real technical interviewer. It asks you a coding question, listens to your explanation, gives hints when you are stuck, reviews your code, and after the interview generates a full report on how you performed and what you should study next.
 
-- **Lack of Realistic Practice:** Solving problems alone ≠ explaining your approach under time constraints.
-- **Limited Feedback:** Friends or peers may not always be available or provide structured critiques.
-- **No Adaptive Guidance:** Real interviewers give hints when you're stuck—most practice tools don't.
-- **No Whiteboarding Simulation:** Many coding interviews involve sketching ideas, but few platforms support interactive diagrams.
+---
 
-This project was born from my own frustrations while prepping for interviews. I wanted an AI that could **mimic a real interviewer**, offering not just questions but **coaching, hints, and detailed feedback**.
+## Features
 
-## The Solution: An AI That Interviews Like a Human
+- AI interviewer that asks questions, gives hints, and evaluates your answers
+- Coding questions from a LeetCode-style database, filterable by topic and difficulty
+- Built-in code editor where you write and submit your solution
+- Interactive whiteboard where you can draw diagrams and the AI understands them
+- Full evaluation report at the end covering problem-solving, code quality, and communication
+- Personalized learning resources based on your weak areas, pulled from Google Search
 
-This AI interviewer isn't just a question bank—it's an interactive coach that:
+---
 
-1. **Conducts Realistic Interviews:** Picks questions from a curated list (no random, irrelevant problems).
-2. **Guides You Like a Pro:** Offers hints when you're stuck, just like a real interviewer would.
-3. **Understands Whiteboarding:** Lets you sketch solutions on a digital whiteboard (Gemini analyzes the drawing!).
-4. **Remembers Context:** Uses LangGraph to track conversation history for coherent discussions.
-5. **Provides Detailed Feedback:** After the interview, it generates a structured report on:
-   - Problem-solving approach
-   - Code quality
-   - Communication skills
-6. **Recommends Learning Resources:** Uses Google Search (via Gemini Grounding) to suggest study materials based on weak areas.
+## How It Works — Simple Version
 
-## How It Works: Gemini + LangGraph
+1. You open the app and the AI greets you
+2. You pick a coding question by topic, difficulty, or ask for a random one
+3. The AI presents the question and you start solving it
+4. As you work, you can type your thoughts, write code, or draw on the whiteboard
+5. The AI responds like a real interviewer — asking follow-up questions or giving hints
+6. When you are done, you tell the AI to end the interview
+7. The AI generates a detailed report and learning plan for you
 
-### Core Technologies
-- **Google Gemini:** Handles natural language interactions, image understanding (for whiteboard sketches), and feedback generation.
-- **LangGraph:** Manages conversation flow, state tracking, and tool integrations.
-- **Gradio:** Provides the interactive UI for coding, chatting, and drawing.
+---
 
-### Key Features in Action
-1. **Dynamic Question Selection**
-   - The AI suggests questions based on topic/difficulty.
-   - Once selected, it loads the problem description and starter code.
+## How It Works — Technical Version
 
-2. **Interactive Whiteboard**
-   - Sketch your approach (e.g., diagrams, pseudocode).
-   - Gemini interprets the drawing and discusses it with you.
+### Architecture
 
-3. **Smart Hint System**
-   - If you're stuck, ask for help, and the AI nudges you in the right direction.
+The app has two parts — a backend and a frontend.
 
-4. **Structured Feedback Report**
-   - Post-interview, Gemini analyzes your performance and generates a detailed review.
+The backend is a FastAPI server that contains all the AI logic. It uses LangGraph to manage the interview as a stateful graph. Each user gets a session with its own conversation history, active question, and code. The frontend is a React app that provides the chat interface, code editor, and whiteboard.
 
-## Behind the Scenes: Challenges & Solutions
+### LangGraph Agent
 
-### Challenge 1: Making the AI Interview Like a Human
-- **Problem:** Initially, Gemini either gave away answers too quickly or didn't guide effectively.
-- **Solution:** Fine-tuned the prompts with few-shot examples to balance hints and independent thinking.
+The interview flow is a directed graph with these nodes:
 
-### Challenge 2: Managing Interview State
-- **Problem:** The AI needed to remember the current question, code, and conversation history.
-- **Solution:** Used LangGraph's stateful workflows to track context.
+- **chatbot** — calls Gemini with the full conversation history and system prompt to generate the next response
+- **tools** — executes information-retrieval tools like listing questions or picking a random problem
+- **question selection** — a custom node that loads the chosen question into the session state
+- **end interview** — a custom node that marks the session as finished
+- **create report** — generates the structured evaluation and learning plan
 
-**Interview Flow Visualization**
-<p align="center">
-<img src="https://raw.githubusercontent.com/satheeshbhukya/AI-mock-Interviewer/main/static/graph-visualisation.png" alt="Interview Graph structure" width="500"/>
-</p>
+Standard LangGraph ToolNode cannot modify state directly. That is why question selection and end interview use custom nodes — they need to update the session state, not just return a value.
 
-This required a special setup in LangGraph. The `select_question` tool itself is simple (it just defines *that* the action exists): 
+### Tools Available to the AI
 
-```python
-# Tool definition for selecting a question
+| Tool | What It Does |
+|------|-------------|
+| `get_topic_categories` | Returns all available question topics |
+| `get_difficulty_levels` | Returns all difficulty levels |
+| `list_questions` | Lists questions filtered by topic and difficulty |
+| `get_random_problem` | Picks a random question |
+| `select_question` | Loads a specific question into the session |
+| `end_interview` | Ends the session and triggers report generation |
 
-class SelectQuestionArgs(BaseModel):
-    """Input schema for the select_question tool."""
-    ID: Literal[tuple(IDS)] = Field(description="ID of the question")
+### Evaluation Report
 
-@tool(args_schema=SelectQuestionArgs)
-def select_question(ID: str) -> str:
-    """Shows user question with provided ID.
-    ALWAYS use this tool when the candidate confirms selected question.
-    You can start interview process ONLY after using this tool.
-    """
-    # This tool itself doesn't contain the main logic...
-    pass # ...the logic happens in the custom node below
+When the interview ends, Gemini generates a structured JSON report using a Pydantic schema. This ensures the output is always consistent. The JSON is then rendered into a readable Markdown report using a Jinja2 template. The report covers:
+
+- Overall summary and hiring recommendation
+- Strengths with evidence from the transcript
+- Areas for development with evidence
+- Detailed analysis of technical competence, problem solving, and communication
+- Personalized learning topics
+
+### Whiteboard
+
+The whiteboard is an HTML5 canvas. When you click Send, it is captured as a base64 PNG and sent to the backend. The backend passes it to Gemini Vision which describes the drawing in the context of the conversation. That description is then included in the AI's next response.
+
+### Learning Resources
+
+After evaluation, Gemini is called again with Google Search enabled. It searches for current, relevant resources based on your identified weak areas and returns a response with automatic citations.
+
+---
+
+## Requirements
+
+- Python 3.11 or higher
+- Node.js 18 or higher
+- A Google Gemini API key — get one free at https://aistudio.google.com/apikey
+- A HuggingFace account — sign up free at https://huggingface.co
+- A GitHub account — sign up free at https://github.com
+- A Vercel account — sign up free at https://vercel.com
+
+---
+
+## Backend Files
+
+These files make up the backend:
+
+- `main.py` — the entire FastAPI application including all prompts, LangGraph nodes, tools, and API endpoints
+- `data.json` — the question database containing LeetCode-style problems with descriptions, starter code, difficulty, topic, and companies
+- `requirements.txt` — all Python packages needed to run the backend
+- `Dockerfile` — instructions for building the backend as a Docker container for HuggingFace Spaces
+- `README.md` — contains the HuggingFace Spaces configuration header that tells HF this is a Docker app running on port 7860
+
+## Frontend Files
+
+These files make up the frontend:
+
+- `src/App.jsx` — the entire React application including home screen, chat interface, code editor, whiteboard, and report viewer
+- `src/index.css` — all styles for the app
+- `src/main.jsx` — the React entry point
+- `index.html` — the HTML shell that loads the React app
+- `vite.config.js` — Vite build configuration
+- `package.json` — all JavaScript packages needed
+- `.env` — environment variables, specifically the backend URL
+
+---
+
+## Step 1 — Set Up the Backend on HuggingFace Spaces
+
+HuggingFace Spaces lets you host Docker apps for free. The backend runs as a Docker container there.
+
+**Create a new Space:**
+1. Go to https://huggingface.co/spaces
+2. Click **Create new Space**
+3. Give it a name like `ai-mock-interviewer-api`
+4. Set SDK to **Docker**
+5. Set Visibility to **Public**
+6. Click **Create Space**
+
+**Upload the backend files:**
+1. On your Space page click **Files**
+2. Click **Add file → Upload file**
+3. Upload all five backend files: `main.py`, `data.json`, `requirements.txt`, `Dockerfile`, `README.md`
+
+**Add your Gemini API key:**
+1. Go to your Space **Settings**
+2. Scroll to **Repository secrets**
+3. Click **New secret**
+4. Set Name to `GOOGLE_API_KEY`
+5. Paste your Gemini API key as the value
+6. Click **Save**
+
+**Wait for it to build:**
+
+HuggingFace will automatically build and start the backend. This takes 3 to 5 minutes. Watch the logs on the Space page. When it says **Running** your backend is live.
+
+**Your backend URL will be:**
+```
+https://YOUR-HUGGINGFACE-USERNAME-ai-mock-interviewer-api.hf.space
 ```
 
-The *real* work happens in a custom LangGraph *node* called `question_selection_node`. This node runs *after* the AI decides to use the `select_question` tool:
-
-```python
-# Simplified logic inside the 'question_selection_node' function
-
-def question_selection_node(state: InterviewState) -> InterviewState:
-    # 1. Get the last AI message (which contains the tool call)
-    tool_msg: AIMessage = state.get("messages", [])[-1]
-
-    # 2. Loop through tool calls in that message (usually just one here)
-    for tool_call in tool_msg.tool_calls:
-        if tool_call["name"] == "select_question":
-            # 3. Extract the Question ID the AI provided
-            ID: int = int(tool_call["args"]["ID"])
-
-            # 4. Find the question details in the question database 
-            selected_question: pd.Series = df[df.id==ID].iloc[0]
-            question_content = selected_question.content
-            question_code = selected_question.code
-
-            # 5. Prepare a message confirming the selection
-            response = f"Okay, let's work on '{selected_question.problem_name}'. Here's the description:\n{question_content}\nInitial code:\n{question_code}"
-
-            # Create a message containing the response for the AI
-            tool_message = ToolMessage(content=response, name=tool_call["name"], tool_call_id=tool_call["id"])
-
-    # 6. CRITICAL STEP: Update the state dictionary with the new question and code!
-    # The '|' merges the old state with the new values.
-    return state | {
-        "messages": [tool_message], # Add the tool result message
-        "question": question_content, # Update the active question
-        "code": question_code         # Update the starter code
-    }
+**Verify it works** by opening this in your browser:
 ```
-Making these state-changing tools work correctly felt like properly wiring up the AI's brain and hands – tricky, but essential!
+https://YOUR-HUGGINGFACE-USERNAME-ai-mock-interviewer-api.hf.space/docs
+```
+You should see an interactive API documentation page. If you see it, the backend is working correctly.
 
-**Explaining LangGraph's Tool Magic (Simply):**
+---
 
-LangGraph provides powerful ways to structure AI interactions, but some of its abstractions, like how tools are called, can be a bit confusing at first glance, requiring a deeper dive into its underlying implementation.
+## Step 2 — Set Up the Frontend on Vercel
 
-Here's the simple version of how the *standard* `ToolNode` (used for tools that *don't* change the state directly, like getting the list of topics) works:
+Vercel hosts the React frontend for free and automatically builds it from GitHub.
 
-1.  You chat with the AI interviewer.
-2.  Based on the conversation and its instructions (especially after using `.bind_tools(tools)` to tell the model which tools are available), the AI (Gemini) might decide it needs to use a tool. It outputs a special `AIMessage` containing `tool_calls`, like: `AIMessage(content="", tool_calls=[{"name": "get_topic_categories", "args": {}, "id": "call_123"}])`.
-3.  LangGraph routes the flow to the `ToolNode`.
-4.  `ToolNode` looks at the `tool_calls` in that last `AIMessage`.
-5.  It finds the matching Python function (e.g., our `get_topic_categories` function decorated with `@tool`).
-6.  It runs that function.
-7.  It takes the result (the list of topics) and wraps it in a `ToolMessage`, linking it back to the original call ID: `ToolMessage(content=['Arrays', 'Linked Lists', ...], name='get_topic_categories', tool_call_id='call_123')`.
-8.  This `ToolMessage` gets added to the state's message list.
-9.  The flow usually goes back to the AI, which now sees the tool result and can form its next response, like, "Okay, we have questions on these topics: Arrays, Linked Lists..."
-
-For tools like `select_question` that *do* need to change the state, we bypass the standard `ToolNode` and use a custom node (`question_selection_node`) as shown in the previous section.
-
-**Surprise! The AI Gives Good Feedback?**
-
-I was genuinely impressed by the quality of the feedback the AI generated. It didn't just say "good job" or "try harder." It pointed to specific parts of the conversation, analyzed my approach, commented on communication, and created that personalized learning plan. It highlighted things I wouldn't notice just by solving problems alone. That showed me the real value beyond just question-answering.
-
-It also surprised me with its flexibility. I could ask "give me beginner array problems" and it would understand and use the `list_questions` tool with the right filters (`difficulty='Easy'`, `category='Array Manipulation'`). Switching questions mid-interview was also smooth, thanks to the state management and tools.
-
-**Getting the Structured Feedback:**
-
-To make sure the final report was consistent and easy to use, I told Gemini exactly what format to use. I defined a structure using Python's Pydantic library, like a blueprint for the report.
-
-```python
-# Example Pydantic Model (Blueprint for part of the feedback)
-class StrengthItem(BaseModel):
-    """Represents a single observed strength."""
-    point: str = Field(..., description="Concise statement of the strength")
-    evidence: str = Field(..., description="Specific examples or quotes")
-
-class EvaluationOutput(BaseModel):
-    """Root object for the complete evaluation."""
-    overall_summary: str = Field(..., alias="overallSummary")
-    strengths: List[StrengthItem] = Field(...)
-    # ... other fields like areas_for_development, detailed_analysis, etc.
+**Push frontend files to GitHub:**
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin https://github.com/YOUR-GITHUB-USERNAME/ai-mock-interviewer-frontend.git
+git push -u origin main
 ```
 
-Then, when calling the Gemini API to generate the report, I told it to follow this blueprint:
+**Deploy on Vercel:**
+1. Go to https://vercel.com and sign in with GitHub
+2. Click **Add New Project**
+3. Import your `ai-mock-interviewer-frontend` repository
+4. Before clicking Deploy, scroll to **Environment Variables** and add:
+   - Name: `VITE_API_URL`
+   - Value: your HuggingFace backend URL from Step 1
+5. Click **Deploy**
 
-```python
-# Inside the function that generates the report (create_report_node)
-
-evaluation_response = client.models.generate_content(
-    model='gemini-2.0-flash',
-    contents=CANDIDATE_EVALUATION_PROMPT.format(...), # Prompt asking for evaluation
-    config={
-        'response_mime_type': 'application/json', # Tell it we want JSON
-        'response_schema': EvaluationOutput,     # Tell it the *exact* structure/blueprint
-    },
-)
-# Now, evaluation_response.parsed contains the data neatly structured
-evaluation_data: EvaluationOutput = evaluation_response.parsed
+Vercel will build and deploy in about a minute. Your frontend will be live at:
 ```
-This ensures the output is always organized the same way, making it reliable.
+https://ai-mock-interviewer-frontend.vercel.app
+```
 
+---
 
-### Limitations and What's Next
+## Step 3 — Use the App
 
-This is a great start, but it's not perfect:
+1. Open your Vercel URL in the browser
+2. The home screen has two fields:
+   - **HuggingFace Backend URL** — your HF Space URL. A green badge confirms the connection
+   - **Google Gemini API Key** — your Gemini key
+3. Click **Start Interview**
+4. The AI will greet you and ask you to choose a question. For example you can say:
+   - "Give me a medium difficulty array problem"
+   - "I want a random question"
+   - "What topics are available?"
+5. Once a question is selected it appears in the Problem panel on the left
+6. Explain your approach in the chat, write your solution in the code editor, and use the whiteboard button to draw diagrams
+7. When finished, tell the AI you want to end the interview and confirm when asked
+8. Your evaluation report will appear and you can download it as a Markdown file
 
-*   **It Can't *Run* Your Code:** The AI analyzes the code you type as text, but it doesn't actually execute it to check for errors or test edge cases.
-*   **Human Nuance:** While the AI provides remarkably detailed analysis based on the transcript, it might not catch every subtle non-verbal cue or unspoken hesitation a human interviewer might notice. However, it offers a very strong and consistent approximation of a real evaluation process focused on what was said and coded. 
+---
 
-**My Next Steps:**
+## Run Locally Without Deploying
 
-If I had more time, the top two things I'd add are:
+If you want to run the project on your own machine:
 
-1.  **Voice Interaction:** Using speech-to-text and text-to-speech would make it feel much more like a real, immersive conversation. This is my #1 priority!
-2.  **Code Execution:** Letting the AI actually run the code against test cases would provide even more valuable feedback.
+```bash
+# Terminal 1 — Backend
+pip install -r requirements.txt
+export GOOGLE_API_KEY=your_gemini_api_key
+uvicorn main:app --reload --port 7860
+# Runs at http://localhost:7860
+# API docs at http://localhost:7860/docs
 
-### Who Is This For?
+# Terminal 2 — Frontend
+npm install
+npm run dev
+# Runs at http://localhost:5173
+```
 
-Honestly, I think anyone preparing for technical interviews could find this useful:
+When running locally, enter `http://localhost:7860` as the backend URL on the home screen.
 
-*   **Beginners:** Can get practice explaining their thoughts and benefit from the guided hints and personalized learning plans.
-*   **Experienced Devs:** Can refresh their knowledge and practice articulating complex solutions clearly.
-*   **FAANG Aspirants:** Can get targeted practice for the kind of algorithmic and problem-solving questions common in those interviews.
+---
 
-### Final Thoughts
+## API Reference
 
-I'm really proud of how this project turned out. It started as a personal need – wanting better interview practice – and grew into a functional tool that combines several cool AI technologies. Building the conversational flow with LangGraph, integrating the whiteboard feature with Gemini, and getting detailed, grounded feedback feels like a significant step towards making AI a genuinely helpful partner in interview preparation.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Health check, returns status and number of questions loaded |
+| POST | `/api/session/start` | Creates a new interview session, returns session ID and welcome message |
+| POST | `/api/chat` | Sends a message, code update, or whiteboard image to the AI |
+| GET | `/api/session/{id}` | Returns the current state of a session |
+| DELETE | `/api/session/{id}` | Deletes a session |
+| GET | `/api/questions` | Lists questions, accepts optional topic and difficulty query params |
+| GET | `/api/questions/topics` | Returns all available question topics |
+| GET | `/api/questions/difficulties` | Returns all available difficulty levels |
+| GET | `/docs` | Interactive Swagger API documentation |
 
-**Want to see it in action or peek at the code?**
+---
 
-You can find the complete project in my Kaggle Notebook:
+## Limitations
 
-[**>>> Notebook <<<**](https://www.kaggle.com/code/satheeshbhukya1/ai-mock-technical-interviewer#Mock-Technical-Interviewer-with-Gemini-and-LangGraph)
-
-
-Give it a try! I'd be thrilled to hear your feedback, suggestions, or ideas in the comments on Kaggle or below! What features would *you* find most helpful?
+- The AI reads and discusses your code but does not execute it or run it against test cases
+- Sessions are stored in memory on the backend. If the HuggingFace Space restarts, active sessions are lost
+- The AI provides strong consistent evaluations based on the transcript but cannot observe things like hesitation or tone the way a human interviewer can
