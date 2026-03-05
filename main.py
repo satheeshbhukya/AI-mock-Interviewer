@@ -342,7 +342,7 @@ def end_interview() -> bool:
     Use this ONLY when the candidate confirms they want to end the interview.
     """
 
-llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=GOOGLE_API_KEY)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=GOOGLE_API_KEY)
 
 auto_tools: List[BaseTool] = [get_difficulty_levels, get_topic_categories, get_random_problem, list_questions]
 tool_node = ToolNode(auto_tools)
@@ -368,7 +368,7 @@ def get_interview_transcript(messages: List[BaseMessage]) -> str:
                 if image_data := part.get("image_url"):
                     try:
                         response = client.models.generate_content(
-                            model="gemini-2.0-flash",
+                            model="gemini-2.5-flash",
                             contents=[DESCRIBE_IMAGE_PROMPT.format(transcript=transcript), image_data.get("url")],
                         )
                         text += f"[Whiteboard description: {response.text}]\n"
@@ -400,7 +400,7 @@ def get_learning_resources(question: str, analytics: str, topics: str, language:
     for attempt in range(5):
         try:
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 contents=RESOURCES_SEARCH_PROMPT.format(
                     question=question, analytics=analytics, topics=topics, language=language
                 ),
@@ -517,7 +517,7 @@ def create_report_node(state: InterviewState) -> InterviewState:
     # Generate structured evaluation
     try:
         eval_response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=CANDIDATE_EVALUATION_PROMPT.format(
                 question=question, transcript=transcript, code=code
             ),
