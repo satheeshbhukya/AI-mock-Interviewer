@@ -332,7 +332,7 @@ def get_llm():
         api_key = os.environ.get("GOOGLE_API_KEY", "")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY is not set. Add it in HuggingFace Space secrets.")
-        _llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=api_key)
+        _llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
         _llm_with_tools = _llm.bind_tools(auto_tools + interview_tools)
     return _llm, _llm_with_tools
 
@@ -358,7 +358,7 @@ def get_interview_transcript(messages: List[BaseMessage]) -> str:
                 if image_data := part.get("image_url"):
                     try:
                         response = client.models.generate_content(
-                            model="gemini-2.0-flash",
+                            model="gemini-2.5-flash",
                             contents=[DESCRIBE_IMAGE_PROMPT.format(transcript=transcript), image_data.get("url")],
                         )
                         text += f"[Whiteboard description: {response.text}]\n"
@@ -388,7 +388,7 @@ def get_learning_resources(question: str, analytics: str, topics: str, language:
     for attempt in range(5):
         try:
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 contents=RESOURCES_SEARCH_PROMPT.format(
                     question=question, analytics=analytics, topics=topics, language=language
                 ),
@@ -501,7 +501,7 @@ def create_report_node(state: InterviewState) -> InterviewState:
 
     try:
         eval_response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=CANDIDATE_EVALUATION_PROMPT.format(
                 question=question, transcript=transcript, code=code
             ),
