@@ -1,10 +1,2 @@
-# ──────────────────────────────────────────────────────────────────
-# Set this to your HuggingFace Space URL after deploying the backend
-# Format: https://YOUR-USERNAME-YOUR-SPACE-NAME.hf.space
-#
-# Example:
-#   VITE_API_URL=https://johndoe-ai-mock-interviewer-api.hf.space
-#
-# On Vercel: set this in Project Settings → Environment Variables
-# ──────────────────────────────────────────────────────────────────
-VITE_API_URL=https://YOUR-USERNAME-YOUR-SPACE-NAME.hf.space
+
+VITE_API_URL=https://happy4040-mock-technical-interviewer.hf.space
