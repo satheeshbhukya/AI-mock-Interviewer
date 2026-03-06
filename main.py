@@ -354,7 +354,7 @@ tool_node = ToolNode(auto_tools)
 
 interview_tools: List[BaseTool] = [select_question, end_interview]
 
-def get_interview_transcript(messages: List[BaseMessage]) -> str:
+def get_interview_transcript(messages: List[BaseMessage], api_key: str = "") -> str:
     """Converts message history to a readable transcript string.
     Handles text, code, and whiteboard image descriptions.
     """
@@ -370,7 +370,7 @@ def get_interview_transcript(messages: List[BaseMessage]) -> str:
                 text += part.get("text", "") + "\n"
                 if image_data := part.get("image_url"):
                     try:
-                        response = get_client(state.get("api_key", "") if isinstance(state, dict) else "").models.generate_content(
+                        response = get_client(api_key).models.generate_content(
                             model="gemini-1.5-flash",
                             contents=[DESCRIBE_IMAGE_PROMPT.format(transcript=transcript), image_data.get("url")],
                         )
@@ -392,7 +392,7 @@ def get_data_for_search(evaluation_response) -> Tuple[str, str]:
 
     return analytics, topics
 
-def get_learning_resources(question: str, analytics: str, topics: str, language: str = "Python") -> str:
+def get_learning_resources(question: str, analytics: str, topics: str, api_key: str = "", language: str = "Python") -> str:
     """Uses Gemini with Google Search grounding to generate a personalized learning plan."""
     config = types.GenerateContentConfig(
         tools=[types.Tool(google_search=types.GoogleSearch())]
@@ -400,7 +400,7 @@ def get_learning_resources(question: str, analytics: str, topics: str, language:
     rc = None
     for attempt in range(5):
         try:
-            response = get_client(state.get("api_key", "") if isinstance(state, dict) else "").models.generate_content(
+            response = get_client(api_key).models.generate_content(
                 model="gemini-1.5-flash",
                 contents=RESOURCES_SEARCH_PROMPT.format(
                     question=question, analytics=analytics, topics=topics, language=language
@@ -509,11 +509,11 @@ def create_report_node(state: InterviewState) -> InterviewState:
         return state | {"report": "Report cannot be generated — no question was selected."}
 
     messages = state.get("messages", [])
-    transcript = get_interview_transcript(messages)
+    transcript = get_interview_transcript(messages, api_key=state.get("api_key", ""))
     code = state.get("code", "")
 
     try:
-        eval_response = get_client(state.get("api_key", "") if isinstance(state, dict) else "").models.generate_content(
+        eval_response = get_client(state.get("api_key", "")).models.generate_content(
             model="gemini-1.5-flash",
             contents=CANDIDATE_EVALUATION_PROMPT.format(
                 question=question, transcript=transcript, code=code
@@ -529,7 +529,7 @@ def create_report_node(state: InterviewState) -> InterviewState:
         return state | {"report": f"Error generating evaluation: {e}"}
 
     analytics, topics = get_data_for_search(eval_response)
-    recommendations = get_learning_resources(question, analytics, topics, "Python")
+    recommendations = get_learning_resources(question, analytics, topics, api_key=state.get("api_key", ""))
 
     report_md = Template(REPORT_TEMPLATE).render(
         evaluation=evaluation,
