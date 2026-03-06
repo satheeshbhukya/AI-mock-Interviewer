@@ -1,9 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 
-// ── Default to env var, fallback to localhost for dev ──────────────────────
-const DEFAULT_API = import.meta.env.VITE_API_URL || "http://localhost:7860";
+const API_URL = import.meta.env.VITE_API_URL || "https://happy4040-mock-technical-interviewer.hf.space";
 
-// ─── Markdown renderer ──────────────────────────────────────────────────────
 function Markdown({ text }) {
   const html = (text || "")
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
@@ -20,7 +18,6 @@ function Markdown({ text }) {
   return <div className="md-body" dangerouslySetInnerHTML={{ __html: `<p>${html}</p>` }} />;
 }
 
-// ─── Whiteboard ─────────────────────────────────────────────────────────────
 function Whiteboard({ onCapture }) {
   const canvasRef = useRef(null);
   const drawing = useRef(false);
@@ -101,67 +98,32 @@ function CodeEditor({ value, onChange }) {
   );
 }
 
-function ConnectionBadge({ url, status }) {
-  const map = {
-    checking: { color: "#ffd166", label: "Checking connection…" },
-    connected: { color: "#7ee8a2", label: "Backend Connected" },
-    error:     { color: "#ef476f", label: "Cannot reach backend" },
-  };
-  const { color, label } = map[status];
-  return (
-    <div className="conn-badge" style={{ borderColor: color }}>
-      <span className="conn-dot" style={{ background: color }}/>
-      <span className="conn-label">{label}</span>
-      <span className="conn-url">{url.replace(/https?:\/\//, "")}</span>
-    </div>
-  );
-}
-
 export default function App() {
   const [screen, setScreen] = useState("home");
-  const [apiKey, setApiKey] = useState("");
-  const [backendUrl, setBackendUrl] = useState(DEFAULT_API);
-  const [connStatus, setConnStatus] = useState("checking");
   const [sessionId, setSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [problem, setProblem] = useState("No problem selected yet.");
+  const [problem, setProblem] = useState("");
   const [code, setCode] = useState("# Your solution here\n");
   const [codeChanged, setCodeChanged] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [finished, setFinished] = useState(false);
   const [report, setReport] = useState("");
   const [showWb, setShowWb] = useState(false);
   const [error, setError] = useState("");
   const chatEndRef = useRef(null);
-  const storedKey = useRef("");
-  const storedUrl = useRef(DEFAULT_API);
-
-  useEffect(() => {
-    setConnStatus("checking");
-    const url = backendUrl.replace(/\/$/, "");
-    const timer = setTimeout(() => {
-      fetch(`${url}/`)
-        .then(r => setConnStatus(r.ok ? "connected" : "error"))
-        .catch(() => setConnStatus("error"));
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [backendUrl]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const apiFetch = (path, opts = {}) =>
-    fetch(`${storedUrl.current}${path}`, {
+    fetch(`${API_URL}${path}`, {
       ...opts,
       headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
     });
 
   const startSession = async () => {
-    if (!apiKey.trim()) { setError("Please enter your Google Gemini API key."); return; }
-    if (connStatus === "error") { setError("Cannot connect to backend. Verify your HuggingFace Space URL."); return; }
-    storedKey.current = apiKey.trim();
-    storedUrl.current = backendUrl.replace(/\/$/, "");
-    setError(""); setLoading(true);
+    setError(""); setStarting(true);
     try {
       const res = await apiFetch("/api/session/start", { method: "POST" });
       if (!res.ok) throw new Error(await res.text());
@@ -170,8 +132,8 @@ export default function App() {
       setMessages([{ role: "ai", text: data.message }]);
       setScreen("interview");
     } catch (e) {
-      setError("Failed to start session: " + e.message);
-    } finally { setLoading(false); }
+      setError("Could not connect to the server. Please try again.");
+    } finally { setStarting(false); }
   };
 
   const sendMessage = async (extraImageBase64 = null) => {
@@ -192,7 +154,7 @@ export default function App() {
       if (data.code && data.code !== "# Your code here") setCode(data.code);
       if (data.finished) { setFinished(true); if (data.report) setReport(data.report); }
     } catch (e) {
-      setMessages(m => [...m, { role: "ai", text: `Error: ${e.message}` }]);
+      setMessages(m => [...m, { role: "ai", text: `Something went wrong. Please try again.` }]);
     } finally { setLoading(false); }
   };
 
@@ -204,13 +166,12 @@ export default function App() {
     a.download = "interview_report.md"; a.click();
   };
 
-  // HOME
   if (screen === "home") return (
     <div className="home-screen">
       <div className="home-card">
         <div className="logo-mark">⬡</div>
         <h1 className="home-title">Mock Technologie<br/><span>Interview Suite</span></h1>
-        <p className="home-sub">AI-powered technical interviews with Gemini, live whiteboard, code editor, and a full evaluation report.</p>
+        <p className="home-sub">Practice real technical interviews with an AI interviewer powered by Google Gemini. Get hints, use the whiteboard, write code, and receive a full evaluation report.</p>
 
         <div className="features-row">
           <div className="feat"><span>🧠</span><p>Gemini AI</p></div>
@@ -219,29 +180,11 @@ export default function App() {
           <div className="feat"><span>📊</span><p>Report</p></div>
         </div>
 
-        <div className="config-section">
-          <label className="input-label">HuggingFace Backend URL</label>
-          <input type="text" className="config-input" value={backendUrl}
-            onChange={e => setBackendUrl(e.target.value)}
-            placeholder="https://your-username-space-name.hf.space" />
-          <ConnectionBadge url={backendUrl} status={connStatus} />
-        </div>
-
-        <div className="config-section">
-          <label className="input-label">Google Gemini API Key</label>
-          <input type="password" className="config-input" placeholder="AIza..."
-            value={apiKey} onChange={e => setApiKey(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && startSession()} />
-          <p className="key-hint">Get yours at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com</a></p>
-        </div>
-
         {error && <p className="err-msg">{error}</p>}
 
-        <button className="start-btn" onClick={startSession} disabled={loading || connStatus === "checking"}>
-          {loading ? <span className="spinner"/> : connStatus === "checking" ? "Connecting…" : "Start Interview →"}
+        <button className="start-btn" onClick={startSession} disabled={starting}>
+          {starting ? <span className="spinner"/> : "Start Interview →"}
         </button>
-
-        <p className="hf-hint">Deploy the backend on <a href="https://huggingface.co/spaces" target="_blank" rel="noreferrer">HuggingFace Spaces</a> using the provided Dockerfile.</p>
       </div>
       <div className="home-bg">
         {Array.from({length:24}).map((_,i)=>(
@@ -251,14 +194,10 @@ export default function App() {
     </div>
   );
 
-  // INTERVIEW
   return (
     <div className="app">
       <header className="app-header">
         <div className="header-brand"><span className="header-logo">⬡</span><span>Mock Technologie Inc.</span></div>
-        <div className="header-hf">
-          <span className="hf-tag">🤗 {storedUrl.current.replace(/https?:\/\//, "")}</span>
-        </div>
         <div className="header-status">
           {finished
             ? <span className="badge done">✓ Complete</span>
