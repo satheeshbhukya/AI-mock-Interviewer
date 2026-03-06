@@ -345,7 +345,7 @@ _llm_cache: Dict[str, Any] = {}
 def get_llm(user_key: str = ""):
     key = get_api_key(user_key)
     if key not in _llm_cache:
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=key)
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=key)
         _llm_cache[key] = (llm, llm.bind_tools(auto_tools + interview_tools))
     return _llm_cache[key]
 
@@ -371,7 +371,7 @@ def get_interview_transcript(messages: List[BaseMessage], api_key: str = "") -> 
                 if image_data := part.get("image_url"):
                     try:
                         response = get_client(api_key).models.generate_content(
-                            model="gemini-1.5-flash",
+                            model="gemini-2.5-flash",
                             contents=[DESCRIBE_IMAGE_PROMPT.format(transcript=transcript), image_data.get("url")],
                         )
                         text += f"[Whiteboard description: {response.text}]\n"
@@ -401,7 +401,7 @@ def get_learning_resources(question: str, analytics: str, topics: str, api_key: 
     for attempt in range(5):
         try:
             response = get_client(api_key).models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.5-flash",
                 contents=RESOURCES_SEARCH_PROMPT.format(
                     question=question, analytics=analytics, topics=topics, language=language
                 ),
@@ -516,7 +516,7 @@ def create_report_node(state: InterviewState) -> InterviewState:
 
     try:
         eval_response = get_client(state.get("api_key", "")).models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             contents=CANDIDATE_EVALUATION_PROMPT.format(
                 question=question, transcript=transcript, code=code
             ),
