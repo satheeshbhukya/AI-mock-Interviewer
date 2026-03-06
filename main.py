@@ -450,7 +450,9 @@ def chatbot_with_tools(state: InterviewState) -> InterviewState:
     if not messages:
         ai_message = AIMessage(content=WELCOME_MSG)
     else:
-        _, llm_with_tools = get_llm(state.get("api_key", ""))
+        api_key = state.get("api_key", "")
+        print(f"DEBUG chatbot: api_key_present={bool(api_key)}, msg_count={len(messages)}")
+        _, llm_with_tools = get_llm(api_key)
         ai_message = llm_with_tools.invoke(system_and_messages)
 
     return state | {"messages": [ai_message]}
@@ -696,6 +698,7 @@ def chat(req: SendMessageRequest):
     current_messages.append(HumanMessage(content=content))
 
     user_key = req.api_key or state.get("api_key", "")
+    print(f"DEBUG: session_id={req.session_id}, user_key_present={bool(user_key)}, message={req.message[:50] if req.message else ''}")
     graph_input: Dict[str, Any] = {
         "messages": current_messages,
         "question": state.get("question", ""),
@@ -708,6 +711,10 @@ def chat(req: SendMessageRequest):
     try:
         new_state = interviewer_graph.invoke(graph_input)
     except Exception as e:
+        import traceback
+        print("=== CHAT ERROR ===")
+        print(traceback.format_exc())
+        print("==================")
         err = str(e)
         if "429" in err or "RESOURCE_EXHAUSTED" in err:
             return SendMessageResponse(
@@ -723,7 +730,7 @@ def chat(req: SendMessageRequest):
                 code=state.get("code", ""),
                 finished=False,
             )
-        raise HTTPException(status_code=500, detail=f"Interview graph error: {e}")
+        raise HTTPException(status_code=500, detail=f"Interview graph error: {traceback.format_exc()}")
 
     sessions[req.session_id] = new_state
 
