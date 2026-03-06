@@ -100,6 +100,7 @@ function CodeEditor({ value, onChange }) {
 
 export default function App() {
   const [screen, setScreen] = useState("home");
+  const [apiKey, setApiKey] = useState("");
   const [sessionId, setSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [problem, setProblem] = useState("");
@@ -123,9 +124,10 @@ export default function App() {
     });
 
   const startSession = async () => {
+    if (!apiKey.trim()) { setError("Please enter your Google Gemini API key."); return; }
     setError(""); setStarting(true);
     try {
-      const res = await apiFetch("/api/session/start", { method: "POST" });
+      const res = await apiFetch("/api/session/start", { method: "POST", body: JSON.stringify({ api_key: apiKey.trim() }) });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setSessionId(data.session_id);
@@ -144,7 +146,7 @@ export default function App() {
     setMessages(m => [...m, { role: "user", text: userMsg }]);
     setLoading(true);
     try {
-      const body = { session_id: sessionId, message: userText, code, code_changed: codeChanged, image_base64: extraImageBase64 || null };
+      const body = { session_id: sessionId, message: userText, code, code_changed: codeChanged, image_base64: extraImageBase64 || null, api_key: apiKey.trim() };
       setCodeChanged(false);
       const res = await apiFetch("/api/chat", { method: "POST", body: JSON.stringify(body) });
       if (!res.ok) throw new Error(await res.text());
@@ -154,7 +156,7 @@ export default function App() {
       if (data.code && data.code !== "# Your code here") setCode(data.code);
       if (data.finished) { setFinished(true); if (data.report) setReport(data.report); }
     } catch (e) {
-      setMessages(m => [...m, { role: "ai", text: `Something went wrong. Please try again.` }]);
+      setMessages(m => [...m, { role: "ai", text: `Something went wrong. Please try again in a moment.` }]);
     } finally { setLoading(false); }
   };
 
@@ -180,9 +182,17 @@ export default function App() {
           <div className="feat"><span>📊</span><p>Report</p></div>
         </div>
 
+        <div className="config-section">
+          <label className="input-label">Google Gemini API Key</label>
+          <input type="password" className="config-input" placeholder="AIza..."
+            value={apiKey} onChange={e => setApiKey(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && startSession()} />
+          <p className="key-hint">Free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a> — your quota, your usage</p>
+        </div>
+
         {error && <p className="err-msg">{error}</p>}
 
-        <button className="start-btn" onClick={startSession} disabled={starting}>
+        <button className="start-btn" onClick={startSession} disabled={starting || !apiKey.trim()}>
           {starting ? <span className="spinner"/> : "Start Interview →"}
         </button>
       </div>

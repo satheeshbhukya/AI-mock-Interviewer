@@ -204,3 +204,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); font
 .md-body li { margin: 3px 0 3px 18px; list-style: none; position: relative; }
 .md-body li::before { content: "›"; position: absolute; left: -14px; color: var(--accent); }
 .md-body hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+.config-section { margin-bottom: 20px; }
+.input-label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.config-input { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; color: var(--text); font-size: 13.5px; font-family: var(--mono); outline: none; transition: border-color 0.2s; }
+.config-input:focus { border-color: var(--accent); }
+.key-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+.key-hint a { color: var(--accent); text-decoration: none; }

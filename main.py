@@ -33,10 +33,15 @@ from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
 load_dotenv()
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
-if not GOOGLE_API_KEY:
-    print("WARNING: GOOGLE_API_KEY is not set. Set it in HuggingFace Space secrets.")
-os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
+
+def extract_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [p["text"] for p in content if isinstance(p, dict) and p.get("type") == "text"]
+        return " ".join(parts) if parts else ""
+    return str(content)
+
 
 app = FastAPI(
     title="AI Mock Interviewer API",
@@ -62,13 +67,24 @@ except Exception as e:
     print(f"ERROR loading data.json: {e}")
     df = pd.DataFrame()
 
-client = genai.Client(api_key=GOOGLE_API_KEY)
+_client_cache: Dict[str, Any] = {}
 
-is_retriable = lambda e: isinstance(e, genai.errors.APIError) and e.code in {429, 503}
-if not hasattr(genai.models.Models.generate_content, "__wrapped__"):
-    genai.models.Models.generate_content = retry.Retry(predicate=is_retriable)(
-        genai.models.Models.generate_content
-    )
+def get_api_key(user_key: str = "") -> str:
+    key = user_key or os.environ.get("GOOGLE_API_KEY", "")
+    if not key:
+        raise ValueError("No Gemini API key provided. Please enter your API key.")
+    return key
+
+def get_client(user_key: str = ""):
+    key = get_api_key(user_key)
+    if key not in _client_cache:
+        _client_cache[key] = genai.Client(api_key=key)
+        is_retriable = lambda e: isinstance(e, genai.errors.APIError) and e.code in {429, 503}
+        if not hasattr(genai.models.Models.generate_content, "__wrapped__"):
+            genai.models.Models.generate_content = retry.Retry(predicate=is_retriable)(
+                genai.models.Models.generate_content
+            )
+    return _client_cache[key]
 
 INTERVIEWER_SYSTEM_PROMPT = """
 COMPANY NAME: "Mock Technologie Inc."
@@ -265,6 +281,7 @@ class InterviewState(TypedDict):
     code: str
     report: str
     finished: bool
+    api_key: str
 
 DIFFICULTY = tuple(df.difficulty.unique().tolist()) if not df.empty else ("Easy", "Medium", "Hard")
 TOPICS = tuple(df.topic.unique().tolist()) if not df.empty else ("Array Manipulation",)
@@ -323,18 +340,14 @@ def end_interview() -> bool:
     Use this ONLY when the candidate confirms they want to end the interview.
     """
 
-_llm = None
-_llm_with_tools = None
+_llm_cache: Dict[str, Any] = {}
 
-def get_llm():
-    global _llm, _llm_with_tools
-    if _llm is None:
-        api_key = os.environ.get("GOOGLE_API_KEY", "")
-        if not api_key:
-            raise ValueError("GOOGLE_API_KEY is not set. Add it in HuggingFace Space secrets.")
-        _llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", google_api_key=api_key)
-        _llm_with_tools = _llm.bind_tools(auto_tools + interview_tools)
-    return _llm, _llm_with_tools
+def get_llm(user_key: str = ""):
+    key = get_api_key(user_key)
+    if key not in _llm_cache:
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=key)
+        _llm_cache[key] = (llm, llm.bind_tools(auto_tools + interview_tools))
+    return _llm_cache[key]
 
 auto_tools: List[BaseTool] = [get_difficulty_levels, get_topic_categories, get_random_problem, list_questions]
 tool_node = ToolNode(auto_tools)
@@ -348,7 +361,7 @@ def get_interview_transcript(messages: List[BaseMessage]) -> str:
     transcript = ""
     for message in messages:
         if isinstance(message, AIMessage) and message.content:
-            content = message.content if isinstance(message.content, str) else message.content[0]
+            content = extract_text(message.content)
             transcript += f"Interviewer: {content}\n\n"
 
         elif isinstance(message, HumanMessage):
@@ -357,8 +370,8 @@ def get_interview_transcript(messages: List[BaseMessage]) -> str:
                 text += part.get("text", "") + "\n"
                 if image_data := part.get("image_url"):
                     try:
-                        response = client.models.generate_content(
-                            model="gemini-2.5-flash",
+                        response = get_client(state.get("api_key", "") if isinstance(state, dict) else "").models.generate_content(
+                            model="gemini-1.5-flash",
                             contents=[DESCRIBE_IMAGE_PROMPT.format(transcript=transcript), image_data.get("url")],
                         )
                         text += f"[Whiteboard description: {response.text}]\n"
@@ -387,8 +400,8 @@ def get_learning_resources(question: str, analytics: str, topics: str, language:
     rc = None
     for attempt in range(5):
         try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
+            response = get_client(state.get("api_key", "") if isinstance(state, dict) else "").models.generate_content(
+                model="gemini-1.5-flash",
                 contents=RESOURCES_SEARCH_PROMPT.format(
                     question=question, analytics=analytics, topics=topics, language=language
                 ),
@@ -437,7 +450,7 @@ def chatbot_with_tools(state: InterviewState) -> InterviewState:
     if not messages:
         ai_message = AIMessage(content=WELCOME_MSG)
     else:
-        _, llm_with_tools = get_llm()
+        _, llm_with_tools = get_llm(state.get("api_key", ""))
         ai_message = llm_with_tools.invoke(system_and_messages)
 
     return state | {"messages": [ai_message]}
@@ -500,8 +513,8 @@ def create_report_node(state: InterviewState) -> InterviewState:
     code = state.get("code", "")
 
     try:
-        eval_response = client.models.generate_content(
-            model="gemini-2.5-flash",
+        eval_response = get_client(state.get("api_key", "") if isinstance(state, dict) else "").models.generate_content(
+            model="gemini-1.5-flash",
             contents=CANDIDATE_EVALUATION_PROMPT.format(
                 question=question, transcript=transcript, code=code
             ),
@@ -576,7 +589,8 @@ class SendMessageRequest(BaseModel):
     message: str = ""
     code: str = ""
     code_changed: bool = False
-    image_base64: Optional[str] = None  # base64-encoded PNG from whiteboard
+    image_base64: Optional[str] = None
+    api_key: Optional[str] = None  # base64-encoded PNG from whiteboard
 
 class SendMessageResponse(BaseModel):
     message: str
@@ -601,8 +615,11 @@ def root():
         "questions_loaded": len(df),
     }
 
+class StartSessionRequest(BaseModel):
+    api_key: Optional[str] = None
+
 @app.post("/api/session/start", response_model=StartSessionResponse, tags=["Session"])
-def start_session():
+def start_session(req: StartSessionRequest = StartSessionRequest()):
     """
     Start a new interview session.
     Returns a session_id and the AI's welcome message.
@@ -614,6 +631,7 @@ def start_session():
         "code": "# Your solution here\n",
         "report": "",
         "finished": False,
+        "api_key": req.api_key or "",
     }
 
     try:
@@ -624,9 +642,10 @@ def start_session():
     welcome = WELCOME_MSG
     for msg in reversed(new_state.get("messages", [])):
         if isinstance(msg, AIMessage):
-            welcome = msg.content if isinstance(msg.content, str) else msg.content[0]
+            welcome = extract_text(msg.content)
             break
 
+    new_state["api_key"] = req.api_key or ""
     sessions[session_id] = new_state
     return StartSessionResponse(session_id=session_id, message=welcome)
 
@@ -676,17 +695,34 @@ def chat(req: SendMessageRequest):
     current_messages = list(state.get("messages", []))
     current_messages.append(HumanMessage(content=content))
 
+    user_key = req.api_key or state.get("api_key", "")
     graph_input: Dict[str, Any] = {
         "messages": current_messages,
         "question": state.get("question", ""),
         "code": req.code if req.code_changed else state.get("code", ""),
         "report": state.get("report", ""),
         "finished": False,
+        "api_key": user_key,
     }
 
     try:
         new_state = interviewer_graph.invoke(graph_input)
     except Exception as e:
+        err = str(e)
+        if "429" in err or "RESOURCE_EXHAUSTED" in err:
+            return SendMessageResponse(
+                message="The AI is receiving too many requests right now. Please wait a few seconds and try again.",
+                problem=state.get("question", ""),
+                code=state.get("code", ""),
+                finished=False,
+            )
+        if "quota" in err.lower():
+            return SendMessageResponse(
+                message="API quota exceeded. Please wait a minute before sending another message.",
+                problem=state.get("question", ""),
+                code=state.get("code", ""),
+                finished=False,
+            )
         raise HTTPException(status_code=500, detail=f"Interview graph error: {e}")
 
     sessions[req.session_id] = new_state
@@ -694,7 +730,7 @@ def chat(req: SendMessageRequest):
     ai_response = "Processing..."
     for msg in reversed(new_state.get("messages", [])):
         if isinstance(msg, AIMessage):
-            ai_response = msg.content if isinstance(msg.content, str) else msg.content[0]
+            ai_response = extract_text(msg.content)
             break
         elif isinstance(msg, ToolMessage) and msg.name == "end_interview":
             ai_response = "Thank you for your time! The interview has ended. Your evaluation report is being prepared..."
